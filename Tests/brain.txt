@@ -1,0 +1,6 @@
+# On-device model rewrites (skipped when Apple Intelligence is off): what was said | the commands it must become.
+# A video request plays a video (never stops at search results); no service the user didn't name.
+show me a random linus tech tips video|["play random linus tech tips video on youtube"]
+I wanna watch some lofi music|["play lofi music on youtube"]
+put on some arijit|["play arijit"]
+look up how to make dosa on youtube|["search how to make dosa on youtube"]

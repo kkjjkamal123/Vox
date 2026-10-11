@@ -1,0 +1,7 @@
+# Song-title correction: what the recognizer heard | the title Vox must search for.
+arijit singh|arijit singh
+kesariya|Kesariya
+chan marrier|Channa Mereya
+tum he ho|Tum Hi Ho
+blinding lights|blinding lights
+kesariya by arijit|kesariya by arijit

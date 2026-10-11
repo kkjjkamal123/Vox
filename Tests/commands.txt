@@ -1,0 +1,95 @@
+# Each line: what the user says | the actions Vox must produce, in order (as printed by --simulate).
+# Run ./test.sh after every change. Add a line for every new command and every bug fixed.
+open safari and youtube|Open Safari|Open Youtube
+open youtube and play random ltt video|Open Youtube|Play random ltt video on YouTube
+play a random LTT video|Play a random ltt video on YouTube
+watch the latest mkbhd video|Play the latest mkbhd video on YouTube
+play kesariya|Play kesariya
+play arijit singh on spotify|Play arijit singh on Spotify
+play lofi beats on apple music|Play lofi beats on Apple Music
+play the next song|Next track
+what's playing|What's playing
+open notes and type hello world stop typing and open safari|Open Notes|Start typing|Type "hello"|Type " world"|Open Safari
+quit safari and close notes|Quit Safari|Quit Notes
+search salt and pepper recipes on youtube|Open Youtube: salt and pepper recipes
+set volume to 40 and take a screenshot|Volume 40%|Screenshot
+set brightness to 70|Brightness 70%
+turn on the wifi|Wi-Fi on
+close the tab|Close
+go to the top|Top
+open the downloads folder|Open Downloads Folder
+take me to github.com|Open github.com
+navigate to MG road|Directions to MG road
+directions to the airport|Directions to the airport
+coffee shops near me|Map: coffee shops near me
+set a timer for 10 minutes|Timer 10 minutes
+wake me up in 20 minutes|Timer 20 minutes
+set an alarm for 7 am|Alarm 7 am
+cancel the timer|Cancel timers
+how much time is left|Time left
+remind me to call mom tomorrow at 9|Reminder: call mom tomorrow at 9
+add meeting with rahul tomorrow at 5 pm|Event: Meeting with rahul tomorrow at 5 pm
+what's on my calendar today|Today's calendar
+what's my next meeting|Next event
+message rahul saying I'm running late|Message rahul
+send a whatsapp to mom that I reached home|WhatsApp mom
+email rahul about the report saying it's done|Email rahul
+write an email to priya|Email priya
+what's the weather in london tomorrow|Weather in London tomorrow
+will it rain tomorrow|Weather tomorrow
+what's 25 times 4|100
+what is 18 percent of 2400|432
+convert 100 dollars to rupees|Convert 100 USD to INR
+how many grams in 2 pounds|Convert 2 pound to gram
+summarize this page|Summarize page
+translate this to hindi|Translate to Hindi
+make this more formal|Make it more formal
+fix grammar|Fix grammar
+read my clipboard|Read aloud clipboard
+open file resume|Open file resume
+find the file budget|Open file budget
+restart my mac|Restart
+shut down|Shutdown
+empty the trash|Empty Trash
+quit all apps|Quit all apps
+how much storage do I have|Storage
+flip a coin|Flip a coin
+what's the date|Date
+yes|Yes
+send it|Send
+# Play/pause go to the app that is playing, never the media key that launches Apple Music.
+pause|Pause
+stop the music|Pause
+resume|Resume
+play music|Resume
+play pause|Play/Pause
+skip this|Next track
+play the previous song|Previous track
+play kesariya by arijit|Play kesariya by arijit
+next song|Next track
+next tab|Next tab
+next one|Next track
+open safari and next tab|Open Safari|Next tab
+play kesariya and then next song|Play kesariya|Next track
+# Pausing mid-sentence ("--") must not run the short command that starts a longer one.
+quit -- spotify|Quit Spotify
+close this -- app|Quit app
+play -- kesariya|Play kesariya
+stop -- the timer|Cancel timers
+find -- the file budget|Open file budget
+# A leftover word after a pause never launches an app by a partial name ("screen" -> Screen Sharing).
+lock -- screen|Lock|[to on-device model] "screen"
+open safari and spotfy|Open Safari|Open Spotify
+# "next" alone skips; "stop" alone stops the music; "yes" never presses keys, "send it" sends.
+next|Next track
+stop|Pause
+stop listening|Stop listening
+yeah|Yes
+send|Send
+send -- a message to rahul saying hi|Message rahul
+send it -- to priya saying ok|Message priya
+summarize -- this page|Summarize page
+summarize this -- page|Summarize page
+quit all -- apps|Quit all apps|[to on-device model] "apps"
+open youtube and play random -- ltt video|Open Youtube|Play random ltt video on YouTube
+watch the latest -- mkbhd video|Play the latest mkbhd video on YouTube

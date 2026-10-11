@@ -1,0 +1,21 @@
+# Wake-word spotting on what the recognizer heard (continuous mode, before "Hey Vox" is detected).
+# Each line: transcript | strong (acts on anything), weak (rules only), or none (ignored).
+hey vox open safari|strong
+Hey, Vox. What time is it?|strong
+hey box play kesariya|strong
+He works, open notes.|weak
+he walks play music|weak
+hey works next song|strong
+heyvox open youtube|strong
+okay vox pause|strong
+I was saying okay works for me|none
+okay, works for me|weak
+hey folks welcome back to the channel|weak
+so I told him hey folks are here|none
+the box is on the table|none
+hello fox|weak
+we watched a fox video|none
+yo vox next|strong
+I said hi books are great|none
+a box of chocolates|none
+the vox app is cool|weak
