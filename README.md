@@ -1,25 +1,90 @@
-# Vox: voice control for macOS
+<div align="center">
 
-![Platform](https://img.shields.io/badge/platform-macOS%2026%2B-black)
+<img src="docs/icon.png" width="110" alt="Vox icon">
+
+# Vox
+
+**Hands-free voice control for macOS. On-device, instant, and it finishes what you ask.**
+
+[![Download](https://img.shields.io/badge/Download-Vox%201.2%20(.dmg)-2f6feb?style=for-the-badge&logo=apple)](../../releases/latest)
+![Tests](https://img.shields.io/badge/tests-118%2F118%20passing-brightgreen?style=for-the-badge)
+
+![Platform](https://img.shields.io/badge/macOS-26%2B-black?logo=apple)
 ![Chip](https://img.shields.io/badge/Apple%20silicon-arm64-lightgrey)
-![Swift](https://img.shields.io/badge/Swift-6-orange)
+![Swift](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
 ![Offline](https://img.shields.io/badge/speech%20%2B%20LLM-on--device-brightgreen)
+![Idle power](https://img.shields.io/badge/idle%20power-tens%20of%20mW-blueviolet)
 
-Say **"Hey Vox, open Safari and YouTube and play a random LTT video"**, or hold **⌥Space** and talk.
-Commands start while you're still speaking, and Vox goes back to sleep after each one. Speech recognition
-and the language model run on-device. Vox replies in American English.
+<br>
 
-## Requirements
-- **macOS 26 or later on Apple silicon** (built and used daily on macOS 27, MacBook Air). Not available for Windows or Linux:
-  Vox is built on macOS-only frameworks (Speech, AppleScript, Accessibility, the on-device Foundation model).
-- Xcode command-line tools with Swift 6 (`xcode-select --install`).
-- On first run, macOS asks for **Microphone**, **Speech Recognition** and **Accessibility** access, and for
-  permission to control each app Vox drives (Spotify, Safari, Messages …).
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/hud-dark.png">
+  <img src="docs/hud-light.png" width="760" alt="The Vox popup running two commands from one sentence">
+</picture>
 
-## Install
-- **This Mac:** `./build.sh` runs the command tests, builds, and installs to /Applications.
-- **Installer:** `./build.sh --dmg` also writes `dist/Vox.dmg`. It's ad-hoc signed; other Macs need
-  right-click → Open the first time. Shipping to the public needs an Apple Developer ID and notarization.
+*Say **"Hey Vox, open YouTube and play a random LTT video"**. The popup shows what it heard,
+what it's doing, and each action as it runs.*
+
+</div>
+
+---
+
+Say **"Hey Vox"** or hold **⌥Space** and talk. Commands start **while you're still speaking**, and Vox goes back
+to sleep after each one. Speech recognition and the language model run on-device, so nothing you say leaves the Mac.
+
+## Download
+
+| | |
+|---|---|
+| **Vox 1.2 for macOS** | [`Vox-1.2.dmg`](../../releases/latest) from the Releases page |
+| **Requires** | macOS 26 or later on Apple silicon (built and used daily on macOS 27, MacBook Air) |
+| **Not available for** | Windows or Linux. Vox is built on macOS-only frameworks: Speech, AppleScript, Accessibility and Apple's on-device Foundation model |
+
+1. Open the DMG and drag **Vox** to **Applications**.
+2. The app is ad-hoc signed, not notarized, so the first time **right-click → Open** (or *System Settings → Privacy & Security → Open Anyway*).
+3. Allow **Microphone**, **Speech Recognition** and **Accessibility** when asked, and allow Vox to control each app it drives (Spotify, Safari, Messages …).
+
+## See it think
+
+Vox parses speech **word by word**, so the first command fires before you finish the sentence. This is real output from the
+simulator that the test suite uses (`Vox --simulate`):
+
+```text
+$ Vox --simulate "open safari and youtube and play a random LTT video"
+   heard "open safari"  →  Open Safari
+   heard "open safari and youtube and play"  →  Open Youtube
+   final  →  Play a random ltt video on YouTube
+
+$ Vox --simulate "set a timer for 10 minutes and turn the volume to 30"
+   heard "set a timer for 10 minutes and turn"  →  Timer 10 minutes
+   final  →  Volume 30%
+
+$ Vox --simulate "what's 15 percent of 2400"
+   final  →  360
+
+$ Vox --simulate "message mom I'm on my way"
+   final  →  [to on-device model] "message mom I'm on my way"
+
+$ Vox --simulate "hey vox open spotify" --wake
+   woke at "hey vox"
+   final  →  Open Spotify
+```
+
+## How it works
+
+```mermaid
+flowchart LR
+    M["🎙️ Mic<br/>(Mac mic, even with BT headphones)"] --> G{"Volume gate<br/>adaptive noise floor"}
+    G -- speech --> R["On-device speech<br/>recognizer (Neural Engine)"]
+    G -- silence --> Z(["sleep · ~3 ms CPU/s"])
+    R --> W{"Wake word<br/>'Hey Vox' / ⌥Space"}
+    W --> P["Streaming parser<br/>word by word"]
+    P -- understood --> E["Executor<br/>AppleScript · Shortcuts · system APIs"]
+    P -- not understood --> B["On-device LLM<br/>rewrites into commands"]
+    B --> E
+    E --> S["Spotify · YouTube · Music<br/>Messages · Calendar · Mac controls"]
+    E --> H["Popup + spoken reply"]
+```
 
 ## What it does
 | Area | Examples |
@@ -66,6 +131,37 @@ Anything the rules don't understand is rewritten by the on-device model into the
   the rules don't understand, questions, and song titles Spotify can't match as heard, never on wake.
 - Echo cancellation ("Hear me over music") costs about 20% CPU, so it's off by default.
 
+## Proof: the test suite
+
+Every command and every fixed bug gets a test, and `./test.sh` must pass before `build.sh` installs anything.
+The 1.2 release build passes all **118**:
+
+| Suite | File | Cases | What it checks |
+|---|---|---:|---|
+| Commands | `Tests/commands.txt` | 89 | phrase fed word by word (like live speech) → exact actions, in order |
+| Wake word | `Tests/wake.txt` | 19 | strong / weak / no wake for near-miss phrases |
+| On-device model | `Tests/brain.txt` | 4 | rewrites of phrasing the rules don't know |
+| Song titles | `Tests/songs.txt` | 6 | mis-heard titles corrected to what was meant |
+
+```text
+$ ./test.sh
+118/118 passed
+```
+
+## Build from source
+
+```bash
+xcode-select --install          # Swift 6 toolchain
+./test.sh                       # 118 regression tests
+./build.sh                      # tests, builds, signs and installs to /Applications
+./build.sh --dmg                # same, plus dist/Vox.dmg
+```
+
+## Known issues
+
+- Saying "next song" while Spotify plays moves to the next track but can leave it paused, and Vox replies "nothing queued". Being fixed.
+- Ad-hoc signed: other Macs need right-click → Open the first time. Public distribution needs an Apple Developer ID and notarization.
+
 ## Developer test modes
     .build/release/Vox --simulate "open safari and youtube" [--wake]    # parse only, word by word
     .build/release/Vox --brain "put on some arijit"                     # on-device model rewrite / answer
@@ -76,3 +172,7 @@ Anything the rules don't understand is rewritten by the on-device model into the
     open -n /Applications/Vox.app --args --hud-test 20                  # live popup, to measure drawing cost
     open -n /Applications/Vox.app --args --permissions /tmp/p.log       # which apps Vox may control
     open --env VOX_LOG=/tmp/vox.log /Applications/Vox.app               # trace wakes, commands and outcomes
+
+---
+
+Made by **Kamalesh VS** · [github.com/kkjjkamal123](https://github.com/kkjjkamal123) · [kkjj.me](https://kkjj.me)
