@@ -8,8 +8,8 @@
     <key>CFBundleExecutable</key><string>Vox</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.2</string>
-    <key>CFBundleVersion</key><string>120</string>
+    <key>CFBundleShortVersionString</key><string>1.3</string>
+    <key>CFBundleVersion</key><string>130</string>
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSUIElement</key><true/>
     <key>NSMicrophoneUsageDescription</key><string>Vox listens for “Hey Vox” and for commands while you hold ⌥Space. Speech is transcribed on-device.</string>
