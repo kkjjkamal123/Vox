@@ -4,7 +4,10 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 swift build -c release >/dev/null || exit 1
-fails=0; total=0
+fails=0; total=0; skipped=0
+# The model suites need Apple Intelligence; without it they're skipped (and said so), not failed.
+model=$(.build/release/Vox --model-status)
+[[ "$model" == available ]] || print -r -- "On-device model $model: skipping the model and song-title cases."
 while IFS= read -r line; do
     [[ -z "$line" || "$line" == \#* ]] && continue
     said="${line%%|*}"
@@ -36,6 +39,7 @@ done < Tests/wake.txt
 # On-device model rewrites.
 while IFS='|' read -r said want; do
     [[ -z "$said" || "$said" == \#* ]] && continue
+    [[ "$model" == available ]] || { skipped=$((skipped + 1)); continue }
     got=$(.build/release/Vox --brain "$said" | sed -nE 's/^rewrite \([0-9]+ ms\): (.*)$/\1/p')
     total=$((total + 1))
     if [[ "$got" != "$want" ]]; then
@@ -48,6 +52,7 @@ done < Tests/brain.txt
 # Song-title correction (on-device model; skipped when Apple Intelligence is off).
 while IFS='|' read -r heard want; do
     [[ -z "$heard" || "$heard" == \#* ]] && continue
+    [[ "$model" == available ]] || { skipped=$((skipped + 1)); continue }
     got=$(.build/release/Vox --song "$heard" | sed -E 's/^.* -> (.*)  \([0-9]+ ms\)$/\1/')
     total=$((total + 1))
     if [[ "${got:l}" != "${want:l}" ]]; then
@@ -57,5 +62,11 @@ while IFS='|' read -r heard want; do
         print -r -- "    want: $want"
     fi
 done < Tests/songs.txt
-print "$((total - fails))/$total passed"
+# Helper checks (email addresses, file names, maths …) built into the binary.
+self=$(.build/release/Vox --self-test)
+self_total=$(print -r -- "$self" | sed -nE 's|^[0-9]+/([0-9]+) passed$|\1|p')
+self_pass=$(print -r -- "$self" | sed -nE 's|^([0-9]+)/[0-9]+ passed$|\1|p')
+print -r -- "$self" | grep -v ' passed$' || true
+total=$((total + ${self_total:-1})); fails=$((fails + ${self_total:-1} - ${self_pass:-0}))
+print "$((total - fails))/$total passed$( ((skipped)) && print -n ", $skipped skipped (no on-device model)")"
 exit $(( fails > 0 ))

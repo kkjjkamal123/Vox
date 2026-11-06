@@ -35,6 +35,7 @@ message rahul saying I'm running late|Message rahul
 send a whatsapp to mom that I reached home|WhatsApp mom
 email rahul about the report saying it's done|Email rahul
 write an email to priya|Email priya
+email john at gmail dot com saying see you soon|Email john at gmail dot com
 what's the weather in london tomorrow|Weather in London tomorrow
 will it rain tomorrow|Weather tomorrow
 what's 25 times 4|100
