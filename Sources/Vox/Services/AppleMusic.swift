@@ -5,7 +5,7 @@ import AppKit
 @MainActor
 enum AppleMusic {
     static func play(_ query: String) async -> String? {
-        let q = query.replacingOccurrences(of: "\"", with: "")
+        let q = Messaging.escape(query)
         let script = """
             tell application "Music"
                 set hits to (search playlist "Library" for "\(q)")

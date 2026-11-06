@@ -51,6 +51,7 @@ enum Key {
 }
 
 /// Synthesized keyboard input. Posting events requires the Accessibility permission.
+@MainActor
 enum Keyboard {
     private static let source = CGEventSource(stateID: .hidSystemState)
 
@@ -75,6 +76,10 @@ enum Keyboard {
                 let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
                 down?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
                 up?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
+                // Events from the HID-state source carry the modifiers held right now. While ⌥Space is held
+                // for push-to-talk, dictated text would otherwise arrive as ⌥-keystrokes (shortcuts, odd symbols).
+                down?.flags = []
+                up?.flags = []
                 down?.post(tap: .cghidEventTap)
                 up?.post(tap: .cghidEventTap)
                 i += 20

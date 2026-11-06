@@ -35,6 +35,36 @@ if let i = args.firstIndex(of: "--hud-test"), i + 1 < args.count, let secs = Dou
     app.run()
 }
 
+// `Vox --self-test`: checks of helpers the phrase suites can't reach (no permissions, nothing executed).
+// Prints one line per failure, then "N/M passed"; test.sh adds these to its count.
+if args.contains("--self-test") {
+    MainActor.assumeIsolated {
+        var total = 0, failed = 0
+        func check(_ name: String, _ got: String?, _ want: String?) {
+            total += 1
+            if got != want { failed += 1; print("✗ \(name)\n    got:  \(got ?? "nil")\n    want: \(want ?? "nil")") }
+        }
+        check("spoken email", Messaging.spokenEmail("john at gmail dot com"), "john@gmail.com")
+        check("spoken email, dotted name", Messaging.spokenEmail("priya dot k at outlook dot co dot in"), "priya.k@outlook.co.in")
+        check("typed email", Messaging.spokenEmail("priya.k@outlook.com"), "priya.k@outlook.com")
+        check("a name is not an email", Messaging.spokenEmail("rahul sharma"), nil)
+        check("'at' alone is not an email", Messaging.spokenEmail("mom at home"), nil)
+        check("youtube title escapes", YouTube.decodeJSONString(#"Tom \u0026 Jerry \"Live\" caf\u00e9"#), "Tom & Jerry \"Live\" café")
+        check("youtube title, broken escape kept", YouTube.decodeJSONString(#"bad \x"#), #"bad \x"#)
+        let shot = Executor.screenshotPath(now: Date(timeIntervalSince1970: 0))
+        check("screenshot name", shot.hasSuffix(".png") && shot.contains("/Vox Screenshot 19") ? "ok" : shot, "ok")
+        check("screenshot names differ", Executor.screenshotPath() != Executor.screenshotPath(now: Date().addingTimeInterval(1)) ? "ok" : "same", "ok")
+        check("percent", Calc.evaluate("15 percent of 2400").map(Calc.format), "360")
+        check("power", Calc.evaluate("2 to the power of 10").map(Calc.format), "1024")
+        check("not math", Calc.evaluate("open safari").map(Calc.format), nil)
+        check("same song", Spotify.sameSong("Kesariya — Pritam, Arijit Singh", "kesariya by arijit") ? "yes" : "no", "yes")
+        check("different song", Spotify.sameSong("Tum Hi Ho — Arijit Singh", "kesariya") ? "yes" : "no", "no")
+        check("unasked service dropped", Brain.keepService("play arijit on youtube", said: "put on some arijit"), "play arijit")
+        print("\(total - failed)/\(total) passed")
+        exit(failed == 0 ? 0 : 1)
+    }
+}
+
 if let i = args.firstIndex(of: "--simulate"), i + 1 < args.count {
     MainActor.assumeIsolated {
         let s = CommandStream()
@@ -89,6 +119,16 @@ if let i = args.firstIndex(of: "--brain"), i + 1 < args.count {
     RunLoop.main.run()
 }
 
+// `Vox --model-status`: whether the on-device language model can run (test.sh skips model cases otherwise).
+if args.contains("--model-status") {
+    MainActor.assumeIsolated { print(Brain.status) }
+    exit(0)
+}
+
+// Developer modes that drive the microphone, keystrokes or other apps exist only in `./build.sh --dev` builds.
+// In a normal build any process could otherwise borrow Vox's Microphone, Accessibility and Automation
+// permissions just by launching it with these arguments (e.g. record and transcribe the room to a file).
+#if VOX_DEV
 // `Vox --listen-test <seconds> <logfile> [--no-vp]`: listen once and log every transcript update with its
 // time, for checking recognition quality and latency. Launch via `open -n` so it has Vox's mic permission.
 if let i = args.firstIndex(of: "--listen-test"), i + 2 < args.count, let secs = Double(args[i + 1]) {
@@ -129,6 +169,8 @@ if let i = args.firstIndex(of: "--listen-test"), i + 2 < args.count, let secs = 
     RunLoop.main.run()
 }
 
+#endif
+
 // `Vox --permissions <logfile>`: Apple Events permission for each app Vox scripts (launch via `open -n`).
 if let i = args.firstIndex(of: "--permissions"), i + 1 < args.count {
     let path = args[i + 1]
@@ -144,6 +186,7 @@ if let i = args.firstIndex(of: "--permissions"), i + 1 < args.count {
     RunLoop.main.run()
 }
 
+#if VOX_DEV
 // `Vox --lifecycle-test <logfile>`: start and stop the listener rapidly (overlapping, mid-start) and check it
 // never hangs, never ends up half-open, and closes the mic at the end.
 if let i = args.firstIndex(of: "--lifecycle-test"), i + 1 < args.count {
@@ -189,6 +232,8 @@ if let i = args.firstIndex(of: "--lifecycle-test"), i + 1 < args.count {
     RunLoop.main.run()
 }
 
+#endif
+
 // `Vox --song "<misheard title>"`: what the song-title correction makes of it.
 if let i = args.firstIndex(of: "--song"), i + 1 < args.count {
     _ = MainActor.assumeIsolated {
@@ -202,6 +247,7 @@ if let i = args.firstIndex(of: "--song"), i + 1 < args.count {
     RunLoop.main.run()
 }
 
+#if VOX_DEV
 // `Vox --exec "<command>" <logfile>`: run one spoken command through the real parser and executor and log
 // every action and outcome. It really executes. Launch via `open -n` so it has Vox's permissions.
 if let i = args.firstIndex(of: "--exec"), i + 2 < args.count {
@@ -263,6 +309,13 @@ if let i = args.firstIndex(of: "--test-spotify"), i + 2 < args.count {
     }
     RunLoop.main.run()
 }
+
+#else
+for flag in ["--exec", "--listen-test", "--lifecycle-test", "--test-spotify"] where args.contains(flag) {
+    FileHandle.standardError.write(Data("\(flag) is only available in developer builds (./build.sh --dev).\n".utf8))
+    exit(64)
+}
+#endif
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)

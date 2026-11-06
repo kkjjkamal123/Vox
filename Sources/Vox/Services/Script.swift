@@ -1,4 +1,7 @@
 import AppKit
+import os
+
+private let log = Logger(subsystem: "local.vox.assistant", category: "AppleScript")
 
 /// AppleScript off the main thread, with a time limit. A busy or launching app (Spotify starting up,
 /// Messages syncing) can take seconds to answer an Apple Event, and with NSAppleScript's default two-minute
@@ -19,7 +22,13 @@ enum Script {
                 var err: NSDictionary?
                 let wrapped = "with timeout of \(seconds) seconds\n\(source)\nend timeout"
                 let r = NSAppleScript(source: wrapped)?.executeAndReturnError(&err)
-                if let err { NSLog("Vox AppleScript error: \(err)") }
+                // The message can quote what was being sent (a message body, a phone number), so it stays private
+                // in the system log; the error number is enough to diagnose.
+                if let err {
+                    let number = err[NSAppleScript.errorNumber] as? Int ?? 0
+                    let message = err[NSAppleScript.errorMessage] as? String ?? ""
+                    log.error("AppleScript error \(number, privacy: .public): \(message, privacy: .private)")
+                }
                 if once.claim() { cont.resume(returning: err == nil ? (r?.stringValue ?? "") : nil) }
             }
             queue.asyncAfter(deadline: .now() + .seconds(seconds + 1)) {

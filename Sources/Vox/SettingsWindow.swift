@@ -145,6 +145,11 @@ private struct GeneralPane: View {
                 Toggle("Open Vox at login", isOn: $login)
                     .onChange(of: login) { _, v in Settings.shared.launchAtLogin = v; login = Settings.shared.launchAtLogin }
             }
+            Section("Privacy") {
+                Toggle("Look up answers on the web", isOn: $settings.webAnswers)
+                Text("Speech is always recognized on this Mac. When you ask a question, Vox sends just the question to DuckDuckGo and answers from the results; turn this off to answer from the on-device model alone. Weather, exchange rates and song lookups also go to the web, but only when you ask for them.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Spotify") {
                 LabeledContent("Song lookup", value: !Spotify.Credentials.saved ? "Web search (no setup)" : "Spotify API ✓")
                 Text("Optional: connect a free Spotify developer app from the menu bar (Connect Spotify…) for the most accurate song matching.")
@@ -197,7 +202,7 @@ private struct PermissionsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Permissions").font(.largeTitle.bold())
-            Text("Vox needs the first two to work. The rest unlock more commands. Nothing leaves your Mac except web lookups you ask for (weather, songs, exchange rates).")
+            Text("Vox needs the first two to work. The rest unlock more commands. Your voice never leaves your Mac; only web lookups you ask for go out (questions, weather, songs, exchange rates).")
                 .foregroundStyle(.secondary)
             ForEach(Permissions.Kind.allCases) { kind in
                 row(kind)
@@ -274,9 +279,9 @@ private struct AboutPane: View {
         VStack(spacing: 12) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 128, height: 128)
             Text("Vox").font(.system(size: 30, weight: .bold, design: .rounded))
-            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
+            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))")
                 .foregroundStyle(.secondary)
-            Text("On-device speech recognition (Apple SpeechAnalyzer) and language model (Apple Intelligence). Your voice never leaves this Mac.")
+            Text("On-device speech recognition (Apple SpeechAnalyzer) and language model (Apple Intelligence). Your voice never leaves this Mac; questions you ask can be looked up on DuckDuckGo (Settings → General → Privacy).")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 420)
         }
         .frame(maxWidth: .infinity)

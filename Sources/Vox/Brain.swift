@@ -29,6 +29,14 @@ struct CommandPlan {
 final class Brain {
     var isAvailable: Bool { SystemLanguageModel.default.availability == .available }
 
+    /// "available", or why not (e.g. "unavailable: Apple Intelligence is off").
+    static var status: String {
+        switch SystemLanguageModel.default.availability {
+        case .available: return "available"
+        case .unavailable(let why): return "unavailable: \(why)"
+        }
+    }
+
     private static let rewriteInstructions = """
         You convert a spoken request for controlling a Mac into short commands. The speaker uses Indian English; \
         words may be misheard, so infer the most likely intent. Never invent a song, person, place or text the user \
@@ -148,7 +156,9 @@ final class Brain {
     func answer(_ question: String) async -> String {
         guard isAvailable else { return "Apple Intelligence is turned off, so I can't answer questions." }
         // Ground factual answers in a few web results; the on-device model alone often gets facts wrong.
-        let facts = await WebSearch.snippets(question)
+        // This sends the question to DuckDuckGo, so it can be turned off in Settings (answers then come from
+        // the on-device model alone).
+        let facts = Settings.shared.webAnswers ? await WebSearch.snippets(question) : []
         let session = LanguageModelSession(instructions: """
             You are Vox, a friendly voice assistant on a Mac. Answer in one or two short spoken sentences, no lists or markdown. \
             The user is in India unless they say otherwise. \
@@ -158,8 +168,9 @@ final class Brain {
         let prompt = facts.isEmpty ? question
             : "Question: \(question)\n\nSearch results:\n" + facts.map { "- " + $0 }.joined(separator: "\n")
         do {
-            return try await session.respond(to: prompt, options: GenerationOptions(maximumResponseTokens: 80)).content
+            let text = try await session.respond(to: prompt, options: GenerationOptions(maximumResponseTokens: 80)).content
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? "Sorry, I couldn't answer that." : text
         } catch {
             return "Sorry, I couldn't answer that."
         }

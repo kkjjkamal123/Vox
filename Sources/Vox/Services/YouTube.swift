@@ -38,11 +38,18 @@ enum YouTube {
         for m in html.matches(of: #/"videoRenderer":\{"videoId":"([\w-]{11})".{0,1500}?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/#) {
             let id = String(m.1)
             guard seen.insert(id).inserted else { continue }
-            let title = String(m.2).replacingOccurrences(of: "\\u0026", with: "&").replacingOccurrences(of: "\\\"", with: "\"")
+            let title = decodeJSONString(String(m.2))
             videos.append(Video(id: id, title: title))
             if videos.count >= 12 { break }
         }
         return videos
+    }
+
+    /// The title as written in the page's JSON ("Tom \u0026 Jerry", "\"Quoted\"", "\u00e9"…) as plain text.
+    static func decodeJSONString(_ escaped: String) -> String {
+        guard let data = "\"\(escaped)\"".data(using: .utf8),
+              let s = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) as? String else { return escaped }
+        return s
     }
 
     /// Returns the title of the video that was opened, or nil if nothing was found.
@@ -128,7 +135,7 @@ enum MediaState {
         if let id = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier, Executor.browserIDs.contains(id) { return true }
         var buf = [CChar](repeating: 0, count: 4096)
         guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return false }
-        let path = String(cString: buf)
+        let path = String(decoding: buf.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
         return browserPaths.contains { path.hasPrefix($0) } || path.contains("com.apple.WebKit")
     }
 

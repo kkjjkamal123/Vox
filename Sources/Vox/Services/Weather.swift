@@ -132,8 +132,9 @@ final class Locator: NSObject, CLLocationManagerDelegate {
         Task { @MainActor in self.finish(nil) }
     }
     nonisolated func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
+        let status = m.authorizationStatus
         Task { @MainActor in
-            if !self.waiters.isEmpty, m.authorizationStatus == .authorized || m.authorizationStatus == .authorizedAlways { m.requestLocation() }
+            if !self.waiters.isEmpty, status == .authorized || status == .authorizedAlways { self.manager.requestLocation() }
         }
     }
 }

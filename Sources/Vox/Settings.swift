@@ -48,6 +48,8 @@ final class Settings {
     var musicService: MusicService { didSet { d.set(musicService.rawValue, forKey: "musicService") } }
     var feedback: Feedback { didSet { d.set(feedback.rawValue, forKey: "feedback") } }
     var onboarded: Bool { didSet { d.set(onboarded, forKey: "onboarded") } }
+    /// Ground spoken answers in a DuckDuckGo search (sends the question to DuckDuckGo).
+    var webAnswers: Bool { didSet { d.set(webAnswers, forKey: "webAnswers") } }
 
     /// Called when a setting that affects the listener changes.
     @ObservationIgnored var onChange: () -> Void = {}
@@ -62,6 +64,7 @@ final class Settings {
         musicService = MusicService(rawValue: d.string(forKey: "musicService") ?? "") ?? .auto
         feedback = Feedback(rawValue: d.string(forKey: "feedback") ?? "") ?? .answers
         onboarded = d.bool(forKey: "onboarded")
+        webAnswers = d.object(forKey: "webAnswers") as? Bool ?? true
     }
 
     /// Where "play X" goes when no service is named.
@@ -146,7 +149,14 @@ final class Permissions {
     private(set) var states: [Kind: State] = [:]
     private let locationManager = CLLocationManager()
 
+    /// The Permissions page refreshes every 2 s, and one refresh can take longer than that (each Automation check
+    /// may wait up to a second on macOS), so overlapping ones are skipped rather than piling up.
+    private var refreshing = false
+
     func refresh() async {
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
         var s: [Kind: State] = [:]
         s[.microphone] = switch AVCaptureDevice.authorizationStatus(for: .audio) {
             case .authorized: .granted
@@ -180,7 +190,7 @@ final class Permissions {
             if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined { _ = await AVCaptureDevice.requestAccess(for: .audio) }
             else { openPane("Privacy_Microphone") }
         case .accessibility:
-            _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
             openPane("Privacy_Accessibility")
         case .automation:
             // macOS can only ask about an app that's running, so each one is opened out of sight first.

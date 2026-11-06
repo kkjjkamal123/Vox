@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import ApplicationServices
 import UserNotifications
 
@@ -64,6 +65,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             SettingsWindow.shared.show(.permissions)
         }
 
+        prepareSpeech()
+    }
+
+    /// Sets up the recognizer (the first time, that downloads the on-device speech model). If it fails, say so
+    /// once, then retry quietly every minute, so a Mac that was offline at first launch recovers by itself.
+    private func prepareSpeech(attempt: Int = 0) {
         Task {
             do {
                 try await listener.prepare(contextNames: Parser.vocabulary + AppIndex.shared.contextualNames)
@@ -71,7 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
                 syncHandsFree()
             } catch {
                 NSLog("Vox: speech setup failed: \(error)")
-                alert("Speech setup failed", "\(error.localizedDescription)\n\nCheck that your language is supported for on-device dictation.")
+                if attempt == 0 {
+                    alert("Speech setup failed", "\(error.localizedDescription)\n\nCheck that your language is supported for on-device dictation and that the Mac is online. Vox will keep trying.")
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 60) { self.prepareSpeech(attempt: attempt + 1) }
             }
         }
     }
@@ -384,13 +394,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let status: String
-        if !ready { status = "Starting…" }
+        let micDenied = [.denied, .restricted].contains(AVCaptureDevice.authorizationStatus(for: .audio))
+        if micDenied { status = "Microphone access is off" }
+        else if !ready { status = "Starting…" }
         else if awake || (listener.running && !listener.continuous) { status = "Listening…" }
         else if listener.running { status = "Waiting for “Hey Vox”" }
         else if settings.handsFree && screenAsleep { status = "Paused while the screen is off" }
         else { status = "Hold ⌥ Space to talk" }
         let head = menu.addItem(withTitle: status, action: nil, keyEquivalent: "")
         head.isEnabled = false
+        if micDenied { menu.addItem(item("Allow Microphone…", #selector(openPermissions))) }
+        if hotkey?.registered == false {
+            let h = menu.addItem(withTitle: "⌥Space is taken by another app", action: nil, keyEquivalent: "")
+            h.isEnabled = false
+        }
 
         menu.addItem(item("Talk to Vox", #selector(talk), " ", [.option]))
         let hf = item("Listen for “Hey Vox”", #selector(toggleHandsFree))
@@ -437,6 +454,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     @objc private func toggleHandsFree() { settings.handsFree.toggle() }
     @objc private func openSettings() { SettingsWindow.shared.show(.general) }
     @objc private func openCommands() { SettingsWindow.shared.show(.commands) }
+    @objc private func openPermissions() { SettingsWindow.shared.show(.permissions) }
     @objc private func cancelAlarm(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? UUID { Schedule.shared.cancel(id) }
     }
@@ -459,24 +477,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         let box = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 54))
         box.addSubview(id); box.addSubview(secret)
         a.accessoryView = box
+        let connected = Spotify.Credentials.saved
         a.addButton(withTitle: "Connect")
         a.addButton(withTitle: "Open Dashboard")
         a.addButton(withTitle: "Cancel")
+        if connected {
+            a.messageText = "Spotify is connected"
+            a.addButton(withTitle: "Disconnect")
+        }
         NSApp.activate()
         a.window.initialFirstResponder = id
         switch a.runModal() {
         case .alertFirstButtonReturn:
-            let i = id.stringValue.trimmingCharacters(in: .whitespaces), s = secret.stringValue.trimmingCharacters(in: .whitespaces)
+            // Pasted values often bring a trailing newline along.
+            let i = id.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            let s = secret.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !i.isEmpty, !s.isEmpty else { alert("Spotify not connected", "Paste both the Client ID and the Client Secret."); return }
             Task {
                 if await Spotify.Credentials.verify(id: i, secret: s) {
-                    Spotify.Credentials.save(id: i, secret: s)
-                    alert("Spotify connected", "Say “Hey Vox, play Kesariya”.")
+                    if Spotify.Credentials.save(id: i, secret: s) {
+                        alert("Spotify connected", "Say “Hey Vox, play Kesariya”.")
+                    } else {
+                        alert("Couldn’t save to the Keychain", "Spotify accepted them, but macOS didn’t let Vox store them. Try again.")
+                    }
                 } else {
                     alert("Spotify didn’t accept those", "Check the Client ID and Secret and try again.")
                 }
             }
         case .alertSecondButtonReturn:
             NSWorkspace.shared.open(URL(string: "https://developer.spotify.com/dashboard")!)
+        case NSApplication.ModalResponse(rawValue: NSApplication.ModalResponse.alertThirdButtonReturn.rawValue + 1):
+            Spotify.Credentials.remove()
         default: break
         }
     }
@@ -503,11 +534,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 }
 
 /// Developer trace for live tests: launch with VOX_LOG=/path to record wakes, commands and outcomes.
+/// Only in `./build.sh --dev` builds: the trace holds what you said, and in a normal build any process that
+/// launches Vox could point it at a file of its choosing.
 @MainActor func trace(_ s: String) {
+    #if VOX_DEV
     guard let p = ProcessInfo.processInfo.environment["VOX_LOG"] else { return }
     if !FileManager.default.fileExists(atPath: p) { FileManager.default.createFile(atPath: p, contents: nil) }
     guard let h = FileHandle(forWritingAtPath: p) else { return }
     h.seekToEndOfFile()
     h.write(Data((Date().formatted(.dateTime.hour().minute().second()) + "  " + s + "\n").utf8))
     try? h.close()
+    #endif
 }

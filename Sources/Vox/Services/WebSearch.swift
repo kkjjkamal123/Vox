@@ -25,11 +25,21 @@ enum WebSearch {
     }
 
     /// Rough location from the network (city level), used for weather when Location isn't allowed.
+    /// HTTPS only (the old lookup went over plain HTTP, so anyone on the network could see or fake it).
     static func approximateLocation() async -> (lat: Double, lon: Double, city: String)? {
-        guard let url = URL(string: "http://ip-api.com/json/?fields=city,lat,lon"),
-              let (data, _) = try? await URLSession.shared.data(from: url),
-              let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let lat = (j["lat"] as? NSNumber)?.doubleValue, let lon = (j["lon"] as? NSNumber)?.doubleValue else { return nil }
-        return (lat, lon, j["city"] as? String ?? "your area")
+        for endpoint in ["https://get.geojs.io/v1/ip/geo.json", "https://ipwho.is/?fields=city,latitude,longitude"] {
+            guard let url = URL(string: endpoint),
+                  let (data, _) = try? await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 4)),
+                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let lat = number(j["latitude"]), let lon = number(j["longitude"]) else { continue }
+            return (lat, lon, (j["city"] as? String)?.nilIfEmpty ?? "your area")
+        }
+        return nil
+    }
+
+    /// geojs sends coordinates as strings, ipwho.is as numbers.
+    private static func number(_ v: Any?) -> Double? {
+        if let n = v as? NSNumber { return n.doubleValue }
+        return (v as? String).flatMap(Double.init)
     }
 }

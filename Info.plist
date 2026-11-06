@@ -20,14 +20,6 @@
     <key>NSContactsUsageDescription</key><string>Vox finds the people you want to message or email.</string>
     <key>NSLocationUsageDescription</key><string>Vox uses your location for local weather.</string>
     <key>NSLocationWhenInUseUsageDescription</key><string>Vox uses your location for local weather.</string>
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSExceptionDomains</key>
-        <dict>
-            <key>ip-api.com</key>
-            <dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
-        </dict>
-    </dict>
     <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
     <key>NSHumanReadableCopyright</key><string>Vox · on-device voice control for macOS</string>
 </dict>

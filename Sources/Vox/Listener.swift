@@ -91,9 +91,10 @@ final class Listener: @unchecked Sendable {
 
     init() {
         NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] note in
+            let sender = (note.object as? AVAudioEngine).map(ObjectIdentifier.init)
             MainActor.assumeIsolated {
                 // Only act if the change actually stopped our engine; some notifications are harmless.
-                guard let self, (note.object as? AVAudioEngine) === self.audio, self.running, self.capture == nil,
+                guard let self, sender == ObjectIdentifier(self.audio), self.running, self.capture == nil,
                       !self.audio.isRunning else { return }
                 self.onConfigChange()
             }
@@ -267,6 +268,9 @@ final class Listener: @unchecked Sendable {
             }
         }
 
+        // The buffer handler runs on the audio thread: it reads only these copies, never the main-actor properties
+        // (which a later start or a settings change can rewrite while it runs).
+        let isContinuous = continuous, silenceTimeout = silenceTimeout
         sink.handle = { [weak self] buffer in
             guard let self else { return }
             let capacity = AVAudioFrameCount(Double(buffer.frameLength) * target.sampleRate / micFormat.sampleRate) + 32
@@ -279,12 +283,12 @@ final class Listener: @unchecked Sendable {
             }
             guard error == nil, out.frameLength > 0, !self.state.withLock({ $0.muted }) else { return }
             let level = Self.rms(buffer)
-            if continuous { self.gate(out, level: level, into: continuation) } else { continuation.yield(AnalyzerInput(buffer: out)) }
+            if isContinuous { self.gate(out, level: level, into: continuation) } else { continuation.yield(AnalyzerInput(buffer: out)) }
             if self.state.withLock({ $0.reportLevel }) {
                 let v = min(1, sqrt(level) * 3.2)
                 Task { @MainActor in self.onLevel(v) }
             }
-            self.checkSilence(gen)
+            self.checkSilence(gen, continuous: isContinuous, silenceTimeout: silenceTimeout)
         }
         if let capture {
             await capture.start()
@@ -364,7 +368,7 @@ final class Listener: @unchecked Sendable {
     }
 
     /// Runs on the audio thread at buffer rate, so timeouts need no timer of their own.
-    private func checkSilence(_ gen: Int) {
+    private func checkSilence(_ gen: Int, continuous: Bool, silenceTimeout: Double) {
         let now = CFAbsoluteTimeGetCurrent()
         let quiet = state.withLock { s -> Bool in
             guard !s.stopRequested, !s.idleFired, now > s.graceUntil else { return false }

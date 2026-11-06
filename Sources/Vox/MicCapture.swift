@@ -74,7 +74,13 @@ final class MicCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, 
         pending.frameLength += AVAudioFrameCount(frames)
         guard pending.frameLength >= AVAudioFrameCount(Self.rate / 10) else { return }   // 100 ms
         let out = pending
-        if let fresh = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: pending.frameCapacity) { pending = fresh }
+        guard let fresh = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: pending.frameCapacity) else {
+            // No new buffer: hand this one over, then reuse it (the listener copies it before returning).
+            onBuffer(out)
+            pending.frameLength = 0
+            return
+        }
+        pending = fresh
         onBuffer(out)
     }
 }

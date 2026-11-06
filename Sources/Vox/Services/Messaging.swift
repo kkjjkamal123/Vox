@@ -6,12 +6,34 @@ import Contacts
 enum Messaging {
     enum Channel { case iMessage, whatsApp, email }
 
-    struct Person { let name: String; let phones: [String]; let emails: [String] }
+    struct Person: Sendable { let name: String; let phones: [String]; let emails: [String] }
 
-    /// Best contact match for a spoken name ("mom", "rahul", "rahul sharma").
+    /// Whether Vox may read Contacts (so "couldn't find" can be told apart from "not allowed to look").
+    static var contactsAllowed: Bool {
+        let s = CNContactStore.authorizationStatus(for: .contacts)
+        return s == .authorized
+    }
+
+    /// "john at gmail dot com", "priya.k@outlook.com" -> an address, or nil if it isn't one.
+    nonisolated static func spokenEmail(_ spoken: String) -> String? {
+        var s = " " + spoken.lowercased() + " "
+        for (a, b) in [(" at the rate ", "@"), (" at ", "@"), (" dot ", "."), (" underscore ", "_"), (" dash ", "-"), (" hyphen ", "-")] {
+            s = s.replacingOccurrences(of: a, with: b)
+        }
+        s = s.replacingOccurrences(of: " ", with: "")
+        return s.wholeMatch(of: #/[a-z0-9._%+\-]+@[a-z0-9\-]+(\.[a-z0-9\-]+)*\.[a-z]{2,}/#) != nil ? s : nil
+    }
+
+    /// Best contact match for a spoken name ("mom", "rahul", "rahul sharma"). Contacts are searched off the
+    /// main thread: enumerating a large address book there froze the popup and the hotkey.
     static func find(_ spoken: String) async -> Person? {
         let status = CNContactStore.authorizationStatus(for: .contacts)
         if status == .notDetermined { _ = try? await CNContactStore().requestAccess(for: .contacts) }
+        guard contactsAllowed else { return nil }
+        return await Task.detached(priority: .userInitiated) { search(spoken) }.value
+    }
+
+    private nonisolated static func search(_ spoken: String) -> Person? {
         let store = CNContactStore()
         let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactNicknameKey, CNContactPhoneNumbersKey,
                     CNContactEmailAddressesKey, CNContactOrganizationNameKey] as [CNKeyDescriptor]

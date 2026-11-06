@@ -128,11 +128,13 @@ final class Schedule {
     }
 
     func cancelAll() -> String {
-        let n = alarms.count
+        let timers = alarms.filter(\.isTimer).count, clocks = alarms.count - timers
         work.values.forEach { $0.cancel() }
         work = [:]; alarms = []
         persist()
-        return n == 0 ? "You don't have any timers or alarms." : "Cancelled \(n) timer\(n == 1 ? "" : "s") and alarms."
+        func count(_ n: Int, _ what: String) -> String? { n == 0 ? nil : "\(n == 1 ? "one" : "\(n)") \(what)\(n == 1 ? "" : "s")" }
+        let parts = [count(timers, "timer"), count(clocks, "alarm")].compactMap { $0 }
+        return parts.isEmpty ? "You don't have any timers or alarms." : "Cancelled " + parts.joined(separator: " and ") + "."
     }
 
     func cancel(_ id: UUID) {
@@ -146,10 +148,11 @@ final class Schedule {
             if let a = alarms.first { return "Your next alarm is \(Self.spoken(a.fire))." }
             return "You don't have any timers running."
         }
-        let s = Int(t.fire.timeIntervalSinceNow)
-        let m = s / 60, r = s % 60
-        return m > 0 ? "\(m) minute\(m == 1 ? "" : "s") and \(r) seconds left on your \(t.label) timer."
-            : "\(r) seconds left on your \(t.label) timer."
+        let s = max(0, Int(t.fire.timeIntervalSinceNow.rounded()))
+        let h = s / 3600, m = s % 3600 / 60, r = s % 60
+        func unit(_ n: Int, _ w: String) -> String { "\(n) \(w)\(n == 1 ? "" : "s")" }
+        let parts = [h > 0 ? unit(h, "hour") : nil, m > 0 ? unit(m, "minute") : nil, r > 0 || s == 0 ? unit(r, "second") : nil].compactMap { $0 }
+        return parts.joined(separator: " and ") + " left on your \(t.label) timer."
     }
 
     private func arm(_ a: Alarm) {

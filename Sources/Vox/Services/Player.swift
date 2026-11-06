@@ -95,9 +95,17 @@ enum Player {
             if cmd != .pause {
                 // Starting playback can take a moment, longer right after launch.
                 var ok = false
-                for _ in 0..<8 {
+                var nudged = false
+                for n in 0..<8 {
                     try? await Task.sleep(for: .milliseconds(200))
-                    if await state(app) == "playing" { ok = true; break }
+                    let now = await state(app)
+                    if now == "playing" { ok = true; break }
+                    // Skipping can land on the next track paused (Spotify does this at the end of an album or
+                    // queue). "Next song" means hear the next song, so start it once.
+                    if [.next, .previous].contains(cmd), now == "paused", n >= 1, !nudged {
+                        nudged = true
+                        await Script.run("tell application \"\(app)\" to play")
+                    }
                 }
                 if !ok { return "\(app) has nothing queued. Tell me what to play." }
             }

@@ -175,18 +175,18 @@ enum Spotify {
 
     // MARK: Credentials (Keychain)
 
-    struct Credentials {
+    struct Credentials: Sendable {
         let id: String, secret: String
         nonisolated private static let service = "local.vox.spotify"
 
-        private static var cached: Credentials?
-        private static var loading: Task<Credentials?, Never>?
+        @MainActor private static var cached: Credentials?
+        @MainActor private static var loading: Task<Credentials?, Never>?
         /// The user said no to keychain access: don't ask again on every song (until they reconnect).
-        private static var refused = false
+        @MainActor private static var refused = false
 
         /// Whether a pair is saved. Reads only the item's attributes, which never makes macOS ask the user
         /// for keychain access (so the menu and Settings can show it without freezing).
-        static var saved: Bool {
+        @MainActor static var saved: Bool {
             if cached != nil { return true }
             let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                     kSecReturnAttributes as String: true]
@@ -196,7 +196,7 @@ enum Spotify {
         /// The saved pair, read once off the main thread. Reading the secret can make macOS ask "allow Vox to
         /// use the keychain?" (after an update, for example), and that question used to freeze all of Vox until
         /// answered. Now Vox waits at most 2 s, then carries on without it (songs are found by web search).
-        static func load() async -> Credentials? {
+        @MainActor static func load() async -> Credentials? {
             if let cached { return cached }
             guard !refused, saved else { return nil }
             let task = loading ?? Task.detached(priority: .userInitiated) { readKeychain() }
@@ -226,15 +226,31 @@ enum Spotify {
             return Credentials(id: id, secret: secret)
         }
 
-        static func save(id: String, secret: String) {
+        /// Stores the pair in the login keychain. False if the keychain refused it.
+        @MainActor @discardableResult
+        static func save(id: String, secret: String) -> Bool {
             let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
             SecItemDelete(base as CFDictionary)
             var add = base
             add[kSecAttrAccount as String] = id
             add[kSecValueData as String] = Data(secret.utf8)
-            SecItemAdd(add as CFDictionary, nil)
+            let status = SecItemAdd(add as CFDictionary, nil)
+            guard status == errSecSuccess else {
+                NSLog("Vox: couldn't save the Spotify credentials to the keychain (\(status))")
+                cached = nil
+                return false
+            }
             cached = Credentials(id: id, secret: secret)
             refused = false
+            return true
+        }
+
+        /// Forgets the saved pair (menu: Disconnect Spotify).
+        @MainActor static func remove() {
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service] as CFDictionary)
+            cached = nil
+            refused = false
+            Spotify.token = nil
         }
 
         /// Checks the pair against Spotify before saving.

@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "Vox",
             path: "Sources/Vox",
-            swiftSettings: [.swiftLanguageMode(.v5), .unsafeFlags(["-Osize"])],
+            swiftSettings: [.swiftLanguageMode(.v6), .unsafeFlags(["-Osize"])],
             linkerSettings: [.linkedFramework("Carbon")]
         )
     ]

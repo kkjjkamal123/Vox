@@ -7,7 +7,7 @@ import IOKit.ps
 /// finishes a request instead of stopping halfway: "play X" plays X, it doesn't just search for it.
 @MainActor
 final class Executor: NSObject, AVSpeechSynthesizerDelegate {
-    enum Outcome {
+    enum Outcome: Sendable {
         case done
         case info(String)          // show and speak
         case failed(String)        // show in red and speak
@@ -49,8 +49,31 @@ final class Executor: NSObject, AVSpeechSynthesizerDelegate {
             await previous?.value
             let busy = Self.busy()
             defer { ProcessInfo.processInfo.endActivity(busy) }
-            let outcome = await self.perform(action)
-            self.report(action, outcome)
+            // A command that never finishes (an app that stops answering, a tool that hangs) must not hold up
+            // every command after it, so the queue moves on after a generous deadline.
+            let outcome = await Self.withDeadline(Self.commandDeadline) { await self.perform(action) }
+            if outcome == nil { NSLog("Vox: a command took over \(Int(Self.commandDeadline)) s; moving on") }
+            self.report(action, outcome ?? .failed("That took too long, so I stopped waiting."))
+        }
+    }
+
+    /// Longest any one command may hold the queue (playing a song on a cold Spotify takes up to ~45 s).
+    nonisolated static let commandDeadline: Double = 120
+
+    /// The work's result, or nil if it didn't finish within `seconds` (it keeps running, but nobody waits).
+    private static func withDeadline(_ seconds: Double, _ work: @escaping @MainActor () async -> Outcome) async -> Outcome? {
+        await withCheckedContinuation { (cont: CheckedContinuation<Outcome?, Never>) in
+            let once = Once()
+            let timer = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled else { return }
+                if once.claim() { cont.resume(returning: nil) }
+            }
+            Task { @MainActor in
+                let outcome = await work()
+                timer.cancel()
+                if once.claim() { cont.resume(returning: outcome) }
+            }
         }
     }
 
@@ -166,7 +189,10 @@ final class Executor: NSObject, AVSpeechSynthesizerDelegate {
             await SystemControl.setBrightness(v)
             return .done
 
-        case .shell(let path, let args, _):
+        case .shell(let path, var args, _):
+            // Every screenshot gets its own name, like macOS's own ("Vox Screenshot 2026-11-06 at 10.15.30.png");
+            // a fixed name overwrote the previous one each time.
+            if path.hasSuffix("/screencapture"), let last = args.indices.last { args[last] = Self.screenshotPath() }
             SystemControl.run(path, args)
             return .done
 
@@ -174,7 +200,7 @@ final class Executor: NSObject, AVSpeechSynthesizerDelegate {
             return await Script.run(src) != nil ? .done : .failed("That didn't work. Allow Vox to control System Events in Settings.")
 
         case .wifi(let on):
-            SystemControl.run("/usr/sbin/networksetup", ["-setairportpower", Self.wifiDevice(), on ? "on" : "off"])
+            SystemControl.run("/usr/sbin/networksetup", ["-setairportpower", await Self.wifiDevice(), on ? "on" : "off"])
             return .info("Wi-Fi \(on ? "on" : "off").")
 
         case .power(let p):
@@ -200,7 +226,9 @@ final class Executor: NSObject, AVSpeechSynthesizerDelegate {
                 let p = Process()
                 p.executableURL = URL(fileURLWithPath: "/usr/bin/shortcuts")
                 p.arguments = ["run", name]
-                p.standardError = Pipe()
+                // Never a Pipe nobody reads: a chatty shortcut would fill it and hang here.
+                p.standardOutput = FileHandle.nullDevice
+                p.standardError = FileHandle.nullDevice
                 guard (try? p.run()) != nil else { return false }
                 p.waitUntilExit()
                 return p.terminationStatus == 0
@@ -392,7 +420,8 @@ final class Executor: NSObject, AVSpeechSynthesizerDelegate {
 
     private func message(to: String, body: String, via: Messaging.Channel) async -> Outcome {
         guard let person = await Messaging.find(to) else {
-            return .failed("I couldn't find \(to) in your contacts.")
+            return .failed(Messaging.contactsAllowed ? "I couldn't find \(to) in your contacts."
+                           : "I need access to your contacts. Turn it on in Vox Settings, Permissions.")
         }
         switch via {
         case .whatsApp:
@@ -417,12 +446,15 @@ final class Executor: NSObject, AVSpeechSynthesizerDelegate {
         var address: String?
         var name = to
         if let to {
-            if to.contains("@") { address = to.replacingOccurrences(of: " at ", with: "@").replacingOccurrences(of: " ", with: "") }
+            if let spoken = Messaging.spokenEmail(to) { address = spoken }
             else if let p = await Messaging.find(to) {
                 address = p.emails.first
                 name = p.name
                 if address == nil { return .failed("\(p.name) has no email address.") }
-            } else { return .failed("I couldn't find \(to) in your contacts.") }
+            } else {
+                return .failed(Messaging.contactsAllowed ? "I couldn't find \(to) in your contacts."
+                               : "I need access to your contacts. Turn it on in Vox Settings, Permissions.")
+            }
         }
         guard Messaging.composeEmail(to: address, subject: subject, body: body) else { return .failed("I couldn't open Mail.") }
         let mailIsDefault = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "mailto:x@y.z")!)?.lastPathComponent == "Mail.app"
@@ -472,6 +504,8 @@ final class Executor: NSObject, AVSpeechSynthesizerDelegate {
     // MARK: Speech
 
     func speak(_ text: String) {
+        // Nothing to say: an empty utterance may never report that it finished, which would leave the mic muted.
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let u = AVSpeechUtterance(string: text)
         u.voice = settings.voice
         u.rate = Float(settings.speechRate)
@@ -489,12 +523,18 @@ final class Executor: NSObject, AVSpeechSynthesizerDelegate {
         onSpeaking(false)
     }
 
-    nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) { Task { @MainActor in self.finished(u) } }
-    nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) { Task { @MainActor in self.finished(u) } }
+    nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) {
+        let id = ObjectIdentifier(u)
+        Task { @MainActor in self.finished(id) }
+    }
+    nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) {
+        let id = ObjectIdentifier(u)
+        Task { @MainActor in self.finished(id) }
+    }
 
     /// Unmute once the room has stopped echoing the last word, unless a newer utterance has started.
-    private func finished(_ u: AVSpeechUtterance) {
-        guard speaking === u else { return }
+    private func finished(_ u: ObjectIdentifier) {
+        guard let current = speaking, ObjectIdentifier(current) == u else { return }
         speaking = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             guard let self, speaking == nil else { return }
@@ -502,14 +542,20 @@ final class Executor: NSObject, AVSpeechSynthesizerDelegate {
         }
     }
 
+    static func screenshotPath(now: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory() + "/Desktop"
+        var path = desktop + "/Vox Screenshot \(f.string(from: now)).png"
+        var n = 2
+        while FileManager.default.fileExists(atPath: path) { path = desktop + "/Vox Screenshot \(f.string(from: now)) (\(n)).png"; n += 1 }
+        return path
+    }
+
     /// The Wi-Fi interface name (usually en0, but not always).
-    private static func wifiDevice() -> String {
-        let p = Process(), pipe = Pipe()
-        p.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
-        p.arguments = ["-listallhardwareports"]
-        p.standardOutput = pipe
-        try? p.run(); p.waitUntilExit()
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    private static func wifiDevice() async -> String {
+        let out = await SystemControl.output("/usr/sbin/networksetup", ["-listallhardwareports"], timeout: 5)
         let lines = out.components(separatedBy: "\n")
         if let i = lines.firstIndex(where: { $0.contains("Wi-Fi") }), i + 1 < lines.count,
            let dev = lines[i + 1].components(separatedBy: "Device: ").last { return dev.trimmingCharacters(in: .whitespaces) }
